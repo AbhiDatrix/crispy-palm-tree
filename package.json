@@ -1,0 +1,39 @@
+{
+  "name": "datrix-whatsapp-bot",
+  "version": "2.2.0",
+  "description": "Production-ready WhatsApp AI Employee Bot for Datrix — data intelligence startup",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node --max-old-space-size=512 src/bot.js",
+    "dev": "node --max-old-space-size=512 src/bot.js",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop datrix-bot",
+    "pm2:restart": "pm2 restart datrix-bot",
+    "pm2:logs": "pm2 logs datrix-bot",
+    "fix-chrome": "powershell -ExecutionPolicy Bypass -File fix-chrome.ps1",
+    "fix-session": "node -e \"require('child_process').execSync('taskkill /F /IM chrome.exe /IM chromium.exe 2>nul || exit 0'); console.log('✅ Chrome killed. Starting bot...')\" && npm start"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "datrix",
+    "ai",
+    "groq"
+  ],
+  "author": "Abhi Srivastava",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "groq-sdk": "^0.9.1",
+    "lowdb": "^5.1.0",
+    "node-cron": "^3.0.3",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "^1.26.1"
+  },
+  "devDependencies": {
+    "pm2": "^5.4.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
