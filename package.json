@@ -1,6 +1,6 @@
 {
   "name": "datrix-whatsapp-bot",
-  "version": "2.2.0",
+  "version": "3.0.0",
   "description": "Production-ready WhatsApp AI Employee Bot for Datrix — data intelligence startup",
   "main": "src/bot.js",
   "scripts": {

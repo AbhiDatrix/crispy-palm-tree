@@ -243,6 +243,291 @@ function flushWrite() {
   }
 }
 
+// ─────────────────────────────────────────
+// 👋 Welcome/Goodbye Message System
+// ─────────────────────────────────────────
+
+/**
+ * Set welcome message for a group
+ * @param {string} chatId - Group chat ID
+ * @param {string} message - Welcome message
+ */
+function setWelcomeMessage(chatId, message) {
+  try {
+    if (!db.data.welcomeMessages) {
+      db.data.welcomeMessages = {};
+    }
+    db.data.welcomeMessages[chatId] = {
+      message: message.substring(0, 500),
+      updatedAt: Date.now(),
+    };
+    scheduledWrite();
+  } catch (error) {
+    console.error('❌ setWelcomeMessage error:', error.message);
+  }
+}
+
+/**
+ * Get welcome message for a group
+ * @param {string} chatId - Group chat ID
+ * @returns {string|null}
+ */
+function getWelcomeMessage(chatId) {
+  try {
+    if (!db.data.welcomeMessages) return null;
+    return db.data.welcomeMessages[chatId]?.message || null;
+  } catch (error) {
+    console.error('❌ getWelcomeMessage error:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Set goodbye message for a group
+ * @param {string} chatId - Group chat ID
+ * @param {string} message - Goodbye message
+ */
+function setGoodbyeMessage(chatId, message) {
+  try {
+    if (!db.data.goodbyeMessages) {
+      db.data.goodbyeMessages = {};
+    }
+    db.data.goodbyeMessages[chatId] = {
+      message: message.substring(0, 500),
+      updatedAt: Date.now(),
+    };
+    scheduledWrite();
+  } catch (error) {
+    console.error('❌ setGoodbyeMessage error:', error.message);
+  }
+}
+
+/**
+ * Get goodbye message for a group
+ * @param {string} chatId - Group chat ID
+ * @returns {string|null}
+ */
+function getGoodbyeMessage(chatId) {
+  try {
+    if (!db.data.goodbyeMessages) return null;
+    return db.data.goodbyeMessages[chatId]?.message || null;
+  } catch (error) {
+    console.error('❌ getGoodbyeMessage error:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Check if welcome is enabled for a group
+ * @param {string} chatId - Group chat ID
+ * @returns {boolean}
+ */
+function isWelcomeEnabled(chatId) {
+  try {
+    if (!db.data.welcomeEnabled) return false;
+    return db.data.welcomeEnabled[chatId] || false;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Set welcome enabled status for a group
+ * @param {string} chatId - Group chat ID
+ * @param {boolean} enabled
+ */
+function setWelcomeEnabled(chatId, enabled) {
+  try {
+    if (!db.data.welcomeEnabled) {
+      db.data.welcomeEnabled = {};
+    }
+    db.data.welcomeEnabled[chatId] = enabled;
+    scheduledWrite();
+  } catch (error) {
+    console.error('❌ setWelcomeEnabled error:', error.message);
+  }
+}
+
+/**
+ * Check if goodbye is enabled for a group
+ * @param {string} chatId - Group chat ID
+ * @returns {boolean}
+ */
+function isGoodbyeEnabled(chatId) {
+  try {
+    if (!db.data.goodbyeEnabled) return false;
+    return db.data.goodbyeEnabled[chatId] || false;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Set goodbye enabled status for a group
+ * @param {string} chatId - Group chat ID
+ * @param {boolean} enabled
+ */
+function setGoodbyeEnabled(chatId, enabled) {
+  try {
+    if (!db.data.goodbyeEnabled) {
+      db.data.goodbyeEnabled = {};
+    }
+    db.data.goodbyeEnabled[chatId] = enabled;
+    scheduledWrite();
+  } catch (error) {
+    console.error('❌ setGoodbyeEnabled error:', error.message);
+  }
+}
+
+// ─────────────────────────────────────────
+// 💾 Database Backup System v3.0
+// ─────────────────────────────────────────
+const { readdirSync, renameSync, unlinkSync, readFileSync, writeFileSync } = require('fs');
+
+const BACKUP_DIR = join(DATA_DIR, 'backups');
+const MAX_BACKUPS = 5;
+let lastBackupTime = 0;
+const BACKUP_DEBOUNCE_MS = 60000; // 1 minute between automatic backups
+
+// Ensure backup directory exists
+if (!existsSync(BACKUP_DIR)) {
+  mkdirSync(BACKUP_DIR, { recursive: true });
+  console.log('📂 Created backup directory');
+}
+
+/**
+ * Create a database backup
+ * @param {boolean} isManual - Whether this is a manual backup
+ * @returns {string|null} - Backup filename or null if skipped
+ */
+function createBackup(isManual = false) {
+  const now = Date.now();
+  
+  // Debounce automatic backups (only one per minute)
+  if (!isManual && (now - lastBackupTime) < BACKUP_DEBOUNCE_MS) {
+    return null;
+  }
+  
+  try {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const backupFilename = `datastore_backup_${timestamp}.json`;
+    const backupPath = join(BACKUP_DIR, backupFilename);
+    
+    // Read current database data
+    const dbPath = join(DATA_DIR, 'db.json');
+    const data = readFileSync(dbPath, 'utf8');
+    
+    // Write backup
+    writeFileSync(backupPath, data, 'utf8');
+    lastBackupTime = now;
+    
+    console.log(`💾 Database backup created: ${backupFilename}`);
+    
+    // Clean old backups (keep only last MAX_BACKUPS)
+    cleanupOldBackups();
+    
+    return backupFilename;
+  } catch (error) {
+    console.error('❌ Backup creation failed:', error.message);
+    return null;
+  }
+}
+
+/**
+ * Clean up old backups, keeping only the most recent ones
+ */
+function cleanupOldBackups() {
+  try {
+    const files = readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('datastore_backup_') && f.endsWith('.json'))
+      .sort()
+      .reverse();
+    
+    // Delete old backups beyond MAX_BACKUPS
+    if (files.length > MAX_BACKUPS) {
+      for (let i = MAX_BACKUPS; i < files.length; i++) {
+        const filePath = join(BACKUP_DIR, files[i]);
+        unlinkSync(filePath);
+        console.log(`🗑️ Deleted old backup: ${files[i]}`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Backup cleanup error:', error.message);
+  }
+}
+
+/**
+ * List all available backups
+ * @returns {Array} - Array of backup info objects
+ */
+function listBackups() {
+  try {
+    const files = readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('datastore_backup_') && f.endsWith('.json'))
+      .sort()
+      .reverse();
+    
+    return files.map(filename => {
+      const match = filename.match(/datastore_backup_(.+)\.json/);
+      return {
+        filename,
+        timestamp: match ? match[1].replace(/-/g, ':').slice(0, 19) : 'Unknown'
+      };
+    });
+  } catch (error) {
+    console.error('❌ listBackups error:', error.message);
+    return [];
+  }
+}
+
+/**
+ * Restore database from a backup file
+ * @param {string} backupFilename - Name of the backup file
+ * @returns {boolean} - Success status
+ */
+function restoreBackup(backupFilename) {
+  try {
+    const backupPath = join(BACKUP_DIR, backupFilename);
+    
+    if (!existsSync(backupPath)) {
+      console.error(`❌ Backup file not found: ${backupFilename}`);
+      return false;
+    }
+    
+    // Read backup data
+    const backupData = readFileSync(backupPath, 'utf8');
+    
+    // Validate JSON
+    JSON.parse(backupData);
+    
+    // Create current db backup before restoring
+    createBackup(true);
+    
+    // Write backup data to current db
+    const dbPath = join(DATA_DIR, 'db.json');
+    writeFileSync(dbPath, backupData, 'utf8');
+    
+    // Reload database
+    db.read();
+    
+    console.log(`♻️ Database restored from: ${backupFilename}`);
+    return true;
+  } catch (error) {
+    console.error('❌ Restore failed:', error.message);
+    return false;
+  }
+}
+
+// Modify scheduledWrite to create backup before writing (debounced)
+const originalScheduledWrite = scheduledWrite;
+scheduledWrite = function() {
+  // Create backup if it's been a while
+  if (Date.now() - lastBackupTime > BACKUP_DEBOUNCE_MS) {
+    createBackup(false);
+  }
+  originalScheduledWrite();
+};
+
 // ============================================
 // 🛠️ Database Helper Functions
 // ============================================
@@ -342,10 +627,10 @@ function addToConversation(userId, role, content) {
       content: content.substring(0, 300), // Cap per-message size
       timestamp: Date.now(),
     });
-    // Keep last 20 messages (10 exchanges)
-    if (db.data.users[userId].conversationHistory.length > 20) {
+    // Keep last 50 messages (25 exchanges) - UPGRADED v3.0
+    if (db.data.users[userId].conversationHistory.length > 50) {
       db.data.users[userId].conversationHistory =
-        db.data.users[userId].conversationHistory.slice(-20);
+        db.data.users[userId].conversationHistory.slice(-50);
     }
     scheduledWrite();
   } catch (error) {
@@ -364,6 +649,30 @@ function getConversation(userId) {
   } catch (error) {
     console.error('❌ getConversation error:', error.message);
     return [];
+  }
+}
+
+/**
+ * Get conversation statistics for a user
+ * @param {string} userId — WhatsApp user ID
+ * @returns {object} — Conversation stats
+ */
+function getConversationStats(userId) {
+  try {
+    const history = db.data.users[userId]?.conversationHistory || [];
+    const userMessages = history.filter(m => m.role === 'user').length;
+    const botMessages = history.filter(m => m.role === 'assistant').length;
+    
+    return {
+      totalMessages: history.length,
+      userMessages,
+      botMessages,
+      maxMessages: 50,
+      usagePercent: Math.round((history.length / 50) * 100),
+    };
+  } catch (error) {
+    console.error('❌ getConversationStats error:', error.message);
+    return { totalMessages: 0, userMessages: 0, botMessages: 0, maxMessages: 50, usagePercent: 0 };
   }
 }
 
@@ -1402,6 +1711,7 @@ module.exports = {
   trackUserMessage,
   addToConversation,
   getConversation,
+  getConversationStats,
   clearConversation,
   setUserPreference,
   getUserPreference,
@@ -1457,4 +1767,17 @@ module.exports = {
   updateChatbotActivity,
   endChatbotSession,
   isChatbotExitMessage,
+  // 💾 Backup System Exports
+  createBackup,
+  listBackups,
+  restoreBackup,
+  // 👋 Welcome/Goodbye System Exports
+  setWelcomeMessage,
+  getWelcomeMessage,
+  setGoodbyeMessage,
+  getGoodbyeMessage,
+  isWelcomeEnabled,
+  setWelcomeEnabled,
+  isGoodbyeEnabled,
+  setGoodbyeEnabled,
 };

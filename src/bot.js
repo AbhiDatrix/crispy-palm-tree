@@ -1,9 +1,18 @@
 // ==================================================
-// 🤖 bot.js — Datrix WhatsApp AI Employee Bot v2.2
+// 🤖 bot.js — Datrix WhatsApp Bot v3.0
 // ==================================================
 // Main entry point. Initializes the WhatsApp client,
 // routes messages to handlers, manages anti-spam,
 // welcomes new members, and starts all subsystems.
+//
+// UPGRADE v3.0:
+// - Command aliases system (!j → !joke, etc.)
+// - Interactive menu command (!menu)
+// - Database backup system (auto + manual)
+// - Rate limiting (10 commands/minute)
+// - Welcome/Goodbye messages
+// - Enhanced error handling
+// - Conversation history limits (50 messages)
 //
 // UPGRADE v2.2:
 // - Added message revoke/delete detection
@@ -45,6 +54,8 @@ const path = require('path');
 const { generateReply, generateChatbotReply } = require('./ai');
 const { parseCommand, handleCommand } = require('./commands');
 const { initScheduler, stopScheduler } = require('./scheduler');
+const { logger } = require('./logger');
+const { setupGlobalErrorHandlers } = require('./errorHandler');
 const {
   trackUserMessage,
   addToConversation,
@@ -69,6 +80,11 @@ const {
   updateChatbotActivity,
   endChatbotSession,
   isChatbotExitMessage,
+  // 👋 Welcome/Goodbye Functions
+  getWelcomeMessage,
+  isWelcomeEnabled,
+  getGoodbyeMessage,
+  isGoodbyeEnabled,
 } = require('./db');
 
 // 📊 Message Monitoring System
@@ -99,48 +115,106 @@ const Colors = {
   bgBlue: '\x1b[44m',
 };
 
+// ============================================
+// 🤖 Bot Version
+// ============================================
+const BOT_VERSION = '3.0.0';
+
+// ============================================
+// ⚡ Rate Limiting System v3.0
+// ============================================
+const rateLimitMap = new Map(); // userId -> [{timestamp}]
+const MAX_COMMANDS_PER_MINUTE = 10;
+const RATE_LIMIT_WINDOW_MS = 60000; // 1 minute
+
+/**
+ * Check if user is rate limited
+ * @param {string} userId - User ID to check
+ * @returns {object|null} - { remaining: number, waitSeconds: number } or null if allowed
+ */
+function checkRateLimit(userId) {
+  const now = Date.now();
+  
+  // Get or create user's command timestamps
+  if (!rateLimitMap.has(userId)) {
+    rateLimitMap.set(userId, []);
+  }
+  
+  const timestamps = rateLimitMap.get(userId);
+  
+  // Filter to only timestamps within the window
+  const recentTimestamps = timestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW_MS);
+  
+  if (recentTimestamps.length >= MAX_COMMANDS_PER_MINUTE) {
+    const oldestTimestamp = recentTimestamps[0];
+    const waitSeconds = Math.ceil((oldestTimestamp + RATE_LIMIT_WINDOW_MS - now) / 1000);
+    return { remaining: 0, waitSeconds };
+  }
+  
+  // Add current timestamp
+  recentTimestamps.push(now);
+  rateLimitMap.set(userId, recentTimestamps);
+  
+  return { remaining: MAX_COMMANDS_PER_MINUTE - recentTimestamps.length, waitSeconds: 0 };
+}
+
+/**
+ * Clean up old rate limit entries periodically
+ */
+function cleanupRateLimits() {
+  const now = Date.now();
+  for (const [userId, timestamps] of rateLimitMap) {
+    const recentTimestamps = timestamps.filter(ts => now - ts < RATE_LIMIT_WINDOW_MS);
+    if (recentTimestamps.length === 0) {
+      rateLimitMap.delete(userId);
+    } else {
+      rateLimitMap.set(userId, recentTimestamps);
+    }
+  }
+}
+
+// Clean up rate limits every 5 minutes
+setInterval(cleanupRateLimits, 5 * 60 * 1000);
+
 /**
  * Log a formatted message to terminal.
+ * Now uses the new structured logger for both console and file output.
  * @param {string} type — Message type (info, success, warning, error, command, ai)
  * @param {string} message — Message to log
  */
 function log(type, message) {
-  const timestamp = new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' });
-  let prefix = '';
-  
+  // Use the new structured logger
   switch (type) {
     case 'info':
-      prefix = `${Colors.cyan}[${timestamp}] ℹ️${Colors.reset}`;
+      logger.info(message);
       break;
     case 'success':
-      prefix = `${Colors.green}[${timestamp}] ✅${Colors.reset}`;
+      logger.success(message);
       break;
     case 'warning':
-      prefix = `${Colors.yellow}[${timestamp}] ⚠️${Colors.reset}`;
+      logger.warn(message);
       break;
     case 'error':
-      prefix = `${Colors.red}[${timestamp}] ❌${Colors.reset}`;
+      logger.error(message);
       break;
     case 'command':
-      prefix = `${Colors.magenta}[${timestamp}] 🎮${Colors.reset}`;
+      logger.command(message);
       break;
     case 'ai':
-      prefix = `${Colors.blue}[${timestamp}] 🤖${Colors.reset}`;
+      logger.ai(message);
       break;
     case 'message':
-      prefix = `${Colors.white}[${timestamp}] 💬${Colors.reset}`;
+      logger.message(message);
       break;
     case 'group':
-      prefix = `${Colors.cyan}[${timestamp}] 👥${Colors.reset}`;
+      logger.message(message, { category: 'group' });
       break;
     case 'dm':
-      prefix = `${Colors.green}[${timestamp}] 👤${Colors.reset}`;
+      logger.message(message, { category: 'dm' });
       break;
     default:
-      prefix = `${Colors.white}[${timestamp}]${Colors.reset}`;
+      logger.info(message);
   }
-  
-  console.log(`${prefix} ${message}`);
 }
 
 /**
@@ -214,7 +288,7 @@ function cleanupStaleSession() {
 // ⚙️ Configuration
 // ============================================
 
-const BOT_NAME = process.env.BOT_NAME || 'Datrix AI';
+const BOT_NAME = process.env.BOT_NAME || 'Robert';
 
 // 🛡️ Anti-spam: map of userId → { lastReply, warningCount }
 const antiSpamMap = new Map();
@@ -486,6 +560,15 @@ client.on('message_create', async (msg) => {
 
     if (parsed) {
       console.log(`[DEBUG] Command detected: ${parsed.command}, args: ${parsed.args?.substring(0, 30)}`);
+      
+      // ⚡ Rate Limiting Check
+      const rateLimit = checkRateLimit(senderId);
+      if (rateLimit && rateLimit.waitSeconds > 0) {
+        await msg.reply(`⚡ *Slow down!*\n\nYou've used too many commands. Wait ${rateLimit.waitSeconds} seconds before using another command.\n\n🕐 Limit: ${MAX_COMMANDS_PER_MINUTE} commands per minute.`);
+        log('warning', `Rate limited: ${senderName} (${senderId}) - wait ${rateLimit.waitSeconds}s`);
+        return;
+      }
+      
       // 🔇 Allow !unmute even in muted groups
       if (isGroup && isMuted(chatId) && parsed.command !== '!unmute') {
         log('warning', `Muted group, ignoring command: ${parsed.command}`);
@@ -780,17 +863,20 @@ Reply helpfully and professionally on behalf of ${adminName}'s AI assistant. Inf
 client.on('group_join', async (notification) => {
   try {
     const chat = await notification.getChat();
+    const chatId = chat.id._serialized;
 
     // 🔇 Skip welcome in muted groups
-    if (isMuted(chat.id._serialized)) {
+    if (isMuted(chatId)) {
       log('info', `Skipping welcome in muted group: ${chat.name}`);
       return;
     }
 
     let memberName = 'there';
+    let memberPhone = '';
     try {
       const contact = await notification.getContact();
       memberName = contact.pushname || contact.name || 'there';
+      memberPhone = contact.number || '';
     } catch (error) {
       // Some notifications don't have accessible contacts
       log('warning', 'Could not get joining member name');
@@ -798,17 +884,35 @@ client.on('group_join', async (notification) => {
 
     log('info', `New member joined ${chat.name}: ${memberName}`);
 
-    const welcomeMessage = `👋 Welcome to the group, *${memberName}*!
+    // Check if custom welcome message is set
+    let welcomeMessage;
+    const customMessage = getWelcomeMessage(chatId);
+    const welcomeEnabled = isWelcomeEnabled(chatId);
+    
+    if (welcomeEnabled && customMessage) {
+      // Use custom message with variables
+      welcomeMessage = customMessage
+        .replace(/{name}/g, memberName)
+        .replace(/{phone}/g, memberPhone)
+        .replace(/{group}/g, chat.name || 'this group');
+    } else if (!welcomeEnabled) {
+      // Welcome is disabled
+      log('info', `Welcome disabled for group: ${chat.name}`);
+      return;
+    } else {
+      // Default welcome message
+      welcomeMessage = `👋 Welcome to the group, *${memberName}*!
 
 🏢 This group is powered by *Datrix* — a data intelligence startup building the future of clean, unbiased data.
 
-🤖 I'm ${BOT_NAME}, your AI assistant. Here's what I can do:
+🤖 I'm Datrix Bot, your AI assistant. Here's what I can do:
 
 📋 Type *!help* to see all commands
 🧠 Type *!ask [question]* to ask me anything
 🏢 Type *!about* to learn about Datrix
 
 Feel free to ask questions anytime! 🚀`;
+    }
 
     await chat.sendMessage(welcomeMessage);
     log('success', `Welcome message sent for ${memberName}`);
@@ -862,14 +966,45 @@ client.on('message_revoke_everyone', async (after, before) => {
 client.on('group_leave', async (notification) => {
   try {
     const chat = await notification.getChat();
+    const chatId = chat.id._serialized;
+    
+    // 🔇 Skip goodbye in muted groups
+    if (isMuted(chatId)) {
+      log('info', `Skipping goodbye in muted group: ${chat.name}`);
+      return;
+    }
+
     let memberName = 'Someone';
+    let memberPhone = '';
     try {
       const contact = await notification.getContact();
       memberName = contact.pushname || contact.name || 'Someone';
+      memberPhone = contact.number || '';
     } catch (error) {
       // Ignore
     }
+    
     log('info', `Member left ${chat.name}: ${memberName}`);
+    
+    // Check if custom goodbye message is set
+    const customMessage = getGoodbyeMessage(chatId);
+    const goodbyeEnabled = isGoodbyeEnabled(chatId);
+    
+    if (goodbyeEnabled && customMessage) {
+      // Use custom message with variables
+      const goodbyeMessage = customMessage
+        .replace(/{name}/g, memberName)
+        .replace(/{phone}/g, memberPhone)
+        .replace(/{group}/g, chat.name || 'this group');
+      
+      await chat.sendMessage(goodbyeMessage);
+      log('success', `Goodbye message sent for ${memberName}`);
+    } else if (!goodbyeEnabled) {
+      // Goodbye is disabled
+      log('info', `Goodbye disabled for group: ${chat.name}`);
+    }
+    // No default goodbye message - only send if custom is set
+    
   } catch (error) {
     log('error', `Group leave handler error: ${error.message}`);
   }
@@ -1091,14 +1226,21 @@ process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 
 // 🚫 Catch unhandled errors — bot should NEVER crash
+// Using the new structured logger for better error tracking
 process.on('uncaughtException', (error) => {
-  log('error', `🚨 Uncaught Exception: ${error.message}`);
+  logger.error('Uncaught Exception', {
+    error: error.message,
+    stack: error.stack
+  });
   console.error(error.stack);
   // Don't exit — let PM2 decide
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  log('error', `🚨 Unhandled Promise Rejection: ${reason}`);
+  logger.error('Unhandled Promise Rejection', {
+    reason: reason?.message || String(reason),
+    stack: reason?.stack
+  });
   // Don't exit — let PM2 decide
 });
 
@@ -1124,3 +1266,14 @@ client.initialize().catch((error) => {
   }
   process.exit(1);
 });
+
+// ============================================
+// 📤 Module Exports (for backward compatibility)
+// ============================================
+// Export the log function for backward compatibility
+// The log function now uses the new structured logger
+module.exports = {
+  log,
+  logger,
+  printBanner,
+};

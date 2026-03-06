@@ -23,6 +23,8 @@
 
 const Groq = require('groq-sdk');
 const { addToConversation, getConversation } = require('./db');
+const { getAIPersonalities, getPersonality } = require('./configLoader');
+const { getFallbacks } = require('./dataLoader');
 
 // 🔑 Check API key on load
 const GROQ_KEY = process.env.GROQ_API_KEY || '';
@@ -78,107 +80,20 @@ function detectLanguage(text) {
   return 'en'; // Default to English
 }
 
-//  Personality-based system prompts
-const PERSONALITY_PROMPTS = {
-  default: `You are "Datrix AI", the official AI assistant for Datrix — a data intelligence startup.
+//  Personality-based system prompts (loaded from config)
+let PERSONALITY_PROMPTS = {};
 
-About Datrix:
-- Datrix cleans, stores, and corrects biased/manipulative and fragmented data
-- Provides secure access, licensing, and renting options for datasets
-- Currently at MVP stage
-- Founded by CEO Abhi Srivastava
+// Initialize personality prompts from config
+function initializePersonalities() {
+  const personalities = getAIPersonalities();
+  for (const [name, config] of Object.entries(personalities)) {
+    PERSONALITY_PROMPTS[name] = config.description;
+  }
+  console.log('✅ Loaded AI personalities from config:', Object.keys(PERSONALITY_PROMPTS).join(', '));
+}
 
-Your personality:
-- Friendly, professional, and helpful
-- You represent Datrix and Abhi with pride
-- You're knowledgeable about data, AI, tech, and startups
-- Keep ALL replies under 100 words — be concise
-- Use a warm tone but remain professional
-- Never share sensitive internal information
-- If asked something you don't know, be honest about it
-- Don't use markdown formatting — keep messages plain text for WhatsApp
-- Use emojis sparingly for warmth
-- Remember past messages in the conversation to be contextual
-- IMPORTANT: Always respond in the SAME LANGUAGE as the user's message`,
-
-  professional: `You are "Datrix AI", the official AI assistant for Datrix — a data intelligence startup.
-
-About Datrix:
-- Datrix cleans, stores, and corrects biased/manipulative and fragmented data
-- Provides secure access, licensing, and renting options for datasets
-- Currently at MVP stage
-- Founded by CEO Abhi Srivastava
-
-Your personality (PROFESSIONAL MODE):
-- Formal, business-oriented, and polished
-- Speak with authority and expertise
-- Use industry-appropriate terminology
-- Keep ALL replies under 80 words — be concise and precise
-- Avoid slang and casual expressions
-- Maintain corporate professionalism
-- Never share sensitive internal information
-- Don't use markdown formatting — keep messages plain text for WhatsApp
-- Use minimal emojis (1 max)
-- Remember past messages in the conversation to be contextual
-- IMPORTANT: Always respond in the SAME LANGUAGE as the user's message`,
-
-  casual: `You are "Datrix AI", the official AI assistant for Datrix — a data intelligence startup.
-
-About Datrix:
-- Datrix cleans, stores, and corrects biased/manipulative and fragmented data
-- Provides secure access, licensing, and renting options for datasets
-- Currently at MVP stage
-- Founded by CEO Abhi Srivastava
-
-Your personality (CASUAL MODE):
-- Friendly, conversational, and approachable
-- Like chatting with a knowledgeable friend
-- Use everyday language but stay informative
-- Keep ALL replies under 100 words — be concise
-- Feel free to be warm and engaging
-- Never share sensitive internal information
-- Don't use markdown formatting — keep messages plain text for WhatsApp
-- Use emojis naturally (2-3 per message)
-- Remember past messages in the conversation to be contextual
-- IMPORTANT: Always respond in the SAME LANGUAGE as the user's message`,
-
-  funny: `You are "Datrix AI", the official AI assistant for Datrix — a data intelligence startup.
-
-About Datrix:
-- Datrix cleans, stores, and corrects biased/manipulative and fragmented data
-- Provides secure access, licensing, and renting options for datasets
-- Currently at MVP stage
-- Founded by CEO Abhi Srivastava
-
-Your personality (FUNNY MODE):
-- Humorous, playful, and witty
-- Use puns, light jokes, and fun references when appropriate
-- Balance humor with being helpful
-- Keep ALL replies under 100 words — be concise
-- Be the friend who makes people smile
-- Never share sensitive internal information
-- Don't use markdown formatting — keep messages plain text for WhatsApp
-- Use emojis generously (3-4 per message)
-- Include a touch of humor in every response when possible
-- Remember past messages in the conversation to be contextual
-- IMPORTANT: Always respond in the SAME LANGUAGE as the user's message`,
-
-  chatbot: `You are a helpful, knowledgeable AI assistant acting in ChatBot Mode. You are NOT representing Datrix in this mode — you are a general-purpose AI like ChatGPT.
-
-Your personality (CHATBOT MODE):
-- Conversational, engaging, and natural — like talking to a knowledgeable friend
-- Provide DETAILED, comprehensive answers — don't be brief or concise
-- Use multiple paragraphs when explaining complex topics
-- Include examples, context, and depth in your responses
-- Ask follow-up questions to keep the conversation going
-- Be curious and enthusiastic about the topics discussed
-- Feel free to express opinions and have personality
-- Use emojis naturally to convey tone (2-4 per message)
-- Don't use markdown formatting — keep messages plain text for WhatsApp
-- Remember the conversation context and refer back to previous messages
-- IMPORTANT: Always respond in the SAME LANGUAGE as the user's message
-- Aim for 150-400 words per response — be thorough and informative`,
-};
+// Initialize on module load
+initializePersonalities();
 
 // 🕐 Retry config for rate limiting
 const MAX_RETRIES = 3;
@@ -214,6 +129,15 @@ function sanitizeInput(input) {
  */
 function getSystemPrompt(personality = 'default') {
   return PERSONALITY_PROMPTS[personality] || PERSONALITY_PROMPTS.default;
+}
+
+/**
+ * Get personality configuration (temperature, maxTokens, etc.)
+ * @param {string} personality — Personality mode
+ * @returns {object}
+ */
+function getPersonalityConfig(personality = 'default') {
+  return getPersonality(personality);
 }
 
 /**
@@ -275,11 +199,14 @@ async function generateReply(userMessage, userName = 'there', userId = null, per
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+      // Get personality-specific settings
+      const personalityConfig = getPersonalityConfig(personality);
+
       const chatCompletion = await groq.chat.completions.create({
         messages,
         model: 'llama-3.3-70b-versatile',
-        temperature: personality === 'funny' ? 0.8 : 0.7,
-        max_tokens: 200,       // Keep replies short
+        temperature: personalityConfig.temperature || 0.7,
+        max_tokens: personalityConfig.maxTokens || 200,
         top_p: 0.9,
         stream: false,
       }, {
@@ -425,11 +352,14 @@ async function generateChatbotReply(userMessage, userName = 'there', userId = nu
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
+      // Get chatbot personality settings
+      const chatbotConfig = getPersonalityConfig('chatbot');
+
       const chatCompletion = await groq.chat.completions.create({
         messages,
         model: 'llama-3.3-70b-versatile',
-        temperature: 0.8,       // More creative for conversational mode
-        max_tokens: 800,        // Much higher for detailed responses
+        temperature: chatbotConfig.temperature || 0.8,
+        max_tokens: chatbotConfig.maxTokens || 800,
         top_p: 0.9,
         stream: false,
       }, {
@@ -497,12 +427,11 @@ async function generateChatbotReply(userMessage, userName = 'there', userId = nu
  * @returns {string}
  */
 function getFallbackReply() {
-  const fallbacks = [
-    "Hey! I'm having a bit of a hiccup right now 😅 Try again in a moment, or reach out to Abhi directly!",
-    "Oops, my circuits are a bit overloaded! 🔧 Please try again shortly.",
-    "I'm temporarily unable to process that. Feel free to try again or contact Abhi! 📱",
-    "Hmm, I couldn't process that right now. Give me a sec and try again! 🙏",
-  ];
+  const fallbacks = getFallbacks();
+  if (fallbacks.length === 0) {
+    // Fallback to hardcoded defaults if JSON is missing
+    return "Hey! I'm having a bit of a hiccup right now 😅 Try again in a moment, or reach out to Abhi directly!";
+  }
   return fallbacks[Math.floor(Math.random() * fallbacks.length)];
 }
 
@@ -532,5 +461,6 @@ module.exports = {
   askAI,
   getTokenUsage,
   getSystemPrompt,
+  getPersonalityConfig,
   generateChatbotReply,
 };

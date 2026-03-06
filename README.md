@@ -1,4 +1,4 @@
-# 🤖 Datrix WhatsApp AI Employee Bot v2.2
+# 🤖 Datrix WhatsApp AI Employee Bot v3.0
 
 > Production-ready WhatsApp AI assistant for **Datrix** — a data intelligence startup.
 
@@ -33,6 +33,11 @@ Built with `whatsapp-web.js`, `Groq AI (Llama 3.3 70B)`, `lowdb`, and `node-cron
 | **🗳️ Polls** | Create and vote on polls in groups |
 | **🌤️ Weather** | Get weather info for any city |
 | **📰 News** | Latest tech and world news |
+| **⚡ Command Aliases** | Shortcuts like `!j` → `!joke`, `!q` → `!quote` |
+| **🖱️ Interactive Menu** | `!menu` command shows organized button menus |
+| **� Database Backup** | Automatic backups + `!backup` and `!restore` commands |
+| **🚫 Rate Limiting** | Max 10 commands/minute per user to prevent spam |
+| **👋 Welcome/Goodbye** | Customizable welcome and goodbye messages in groups |
 
 ---
 
@@ -61,7 +66,7 @@ Edit the `.env` file with your details:
 ```env
 GROQ_API_KEY=gsk_your_actual_api_key_here
 ADMIN_NUMBER=919876543210
-BOT_NAME=Datrix AI
+BOT_NAME=Robert
 PORT=3000
 ```
 
@@ -162,10 +167,10 @@ Commands are divided into **two groups** based on user permissions:
 #### Command Groups
 
 **👑 Admin Only Commands:**
-`!broadcast` `!send` `!reply` `!replyto` `!proxy` `!kick` `!promote` `!demote` `!tagall` `!stats`
+`!broadcast` `!send` `!reply` `!replyto` `!proxy` `!kick` `!promote` `!demote` `!tagall` `!stats` `!backup` `!restore`
 
 **🌐 Everyone Commands:**
-`!help` `!about` `!status` `!contact` `!info` `!ping` `!report` `!ask` `!clear` `!personality` `!note` `!reminder` `!task` `!poll` `!weather` `!news` `!joke` `!quote` `!fact` `!react` `!mute` `!unmute`
+`!help` `!about` `!status` `!contact` `!info` `!ping` `!report` `!ask` `!clear` `!personality` `!note` `!reminder` `!task` `!poll` `!weather` `!news` `!joke` `!quote` `!fact` `!react` `!mute` `!unmute` `!shorthelp` `!source` `!menu` `!history` `!welcome` `!goodbye`
 
 ---
 
@@ -299,6 +304,22 @@ The bot will:
 | `!quote` | Get an inspirational quote | Everyone |
 | `!fact` | Learn a random fact | Everyone |
 
+#### ⌨️ Command Aliases
+
+Quick shortcuts for faster access:
+
+| Alias | Command |
+|-------|---------|
+| `!j` | `!joke` |
+| `!q` | `!quote` |
+| `!f` | `!fact` |
+| `!w` | `!weather` |
+| `!n` | `!news` |
+| `!a` | `!ask` |
+| `!p` | `!personality` |
+| `!h` | `!help` |
+| `!s` | `!status` |
+
 ### 👍 Message Reactions
 
 | Command | Description | Access |
@@ -321,6 +342,8 @@ Available emojis: `👍` `❤️` `😂` `🎉` `🤔` `🔥` `🙏` or any emoj
 | `!mute` | Silence bot in this group | Group only |
 | `!unmute` | Resume bot replies | Group only |
 | `!tagall [message]` | Mention all members | Admin only |
+| `!welcome [message]` | Set welcome message (use {name}, {phone}, {group} variables) | Admin only |
+| `!goodbye [message]` | Set goodbye message (use {name}, {phone}, {group} variables) | Admin only |
 
 ### 🔐 Admin Commands
 
@@ -331,6 +354,41 @@ Available emojis: `👍` `❤️` `😂` `🎉` `🤔` `🔥` `🙏` or any emoj
 | `!promote @user` | Make user admin | Admin only |
 | `!demote @user` | Remove admin rights | Admin only |
 | `!stats` | Detailed bot statistics | Admin only |
+| `!backup` | Create a database backup | Admin only |
+| `!restore [filename]` | Restore from a backup | Admin only |
+
+---
+
+## 🖱️ Interactive Menu
+
+Display an interactive button menu with all command categories:
+
+```
+!menu
+```
+
+Shows organized menus for: General, AI, Fun, Tools, and Admin commands.
+
+---
+
+## 📜 Conversation History
+
+View your AI conversation history:
+
+```
+!history
+```
+
+Shows the last 50 messages in your conversation with the AI.
+
+---
+
+## ℹ️ Bot Information
+
+| Command | Description | Access |
+|---------|-------------|--------|
+| `!shorthelp` | Quick command reference | Everyone |
+| `!source` | View bot source code info | Everyone |
 
 ---
 
@@ -461,6 +519,35 @@ Delete a task:
 
 ---
 
+## 💾 Database Backup System
+
+The bot automatically backs up your database and allows manual backups:
+
+**Automatic Backups:**
+- Daily automatic backups at 3:00 AM IST
+- Stored in the `backups/` folder
+- Maximum 7 backups retained (older ones auto-deleted)
+
+**Manual Backup:**
+```
+!backup
+```
+Creates a manual backup with timestamp.
+
+**Restore from Backup:**
+```
+!restore backup-2024-01-15.json
+```
+Restores the database from a specific backup file.
+
+**List Backups:**
+```
+!restore list
+```
+Shows all available backup files.
+
+---
+
 ## 🗳️ Poll System (Groups)
 
 Create polls in group chats:
@@ -580,7 +667,16 @@ Track your bot's usage with `!stats` (admin only):
 
 ## 🔄 Version History
 
-### v2.2 (Current)
+### v3.0 (Latest)
+- **Command Aliases** — Shortcuts like `!j` → `!joke`, `!q` → `!quote`, `!w` → `!weather`, etc.
+- **Interactive Menu** — `!menu` command shows organized button menus for all command categories
+- **Database Backup System** — Automatic backups + `!backup` and `!restore` commands
+- **Command Rate Limiting** — Max 10 commands/minute per user to prevent spam
+- **Welcome/Goodbye Messages** — `!welcome` and `!goodbye` commands with {name}, {phone}, {group} variables
+- **Enhanced AI** — Increased conversation history (50 messages) with `!history` command
+- **New Commands**: `!shorthelp`, `!source`, `!menu`, `!history`, `!welcome`, `!goodbye`, `!backup`, `!restore`
+
+### v2.2 (Previous)
 - **Task Management** — `!task` command to add, complete, and track to-do items
 - **Poll System** — Create and vote on polls in groups with `!poll`
 - **Weather Command** — Get weather info for any city with `!weather`

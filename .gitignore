@@ -10,6 +10,7 @@ node_modules/
 
 # Database
 data/
+backups/
 
 # PM2 logs
 logs/

@@ -141,7 +141,7 @@ function initScheduler(client) {
               // Get the chat to send reminder
               const chat = await client.getChatById(reminder.chatId);
               if (chat) {
-                const reminderMsg = `⏰ *Reminder!*\n\n${reminder.message}\n\n— Datrix AI 🤖`;
+                const reminderMsg = `⏰ *Reminder!*\n\n${reminder.message}\n\n— Robert 🤖`;
                 await chat.sendMessage(reminderMsg);
                 completeReminder(reminder.id);
                 console.log(`⏰ Reminder sent to ${reminder.userId}`);
@@ -256,7 +256,7 @@ async function sendScheduledBroadcast(client, message) {
       return;
     }
 
-    const formattedMsg = `📢 *Datrix Broadcast*\n\n${message}\n\n— Datrix AI 🤖`;
+    const formattedMsg = `📢 *Robert Broadcast*\n\n${message}\n\n— Robert 🤖`;
     const result = await executeBroadcast(client, formattedMsg);
     
     // 📝 Log to database
@@ -283,7 +283,7 @@ async function sendGroupAnnouncement(groupId, message) {
     
     const chat = await whatsappClient.getChatById(groupId);
     if (chat && chat.isGroup) {
-      const formattedMsg = `📢 *Announcement*\n\n${message}\n\n— Datrix AI 🤖`;
+      const formattedMsg = `📢 *Announcement*\n\n${message}\n\n— Robert 🤖`;
       await chat.sendMessage(formattedMsg);
       console.log(`📢 Announcement sent to group: ${chat.name}`);
       return true;
@@ -357,7 +357,7 @@ Hey team! 👋 Here's your weekly Datrix roundup:
 
 💡 Have ideas or feedback? Drop a message anytime!
 
-— Datrix AI 🤖`;
+— Robert 🤖`;
 }
 
 /**
